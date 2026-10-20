@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lockledger"
+version = "0.1.0"
+description = "Offline lockfile supply-chain time machine: snapshot, query, and diff dependency history"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Clawdyy", email = "intertermux@gmail.com" }]
+keywords = ["supply-chain", "lockfile", "npm", "pypi", "offline", "diff"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Software Development :: Build Tools",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+lockledger = "lockledger.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/intertermux-code/lockledger"
+Issues = "https://github.com/intertermux-code/lockledger/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

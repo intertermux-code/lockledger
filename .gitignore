@@ -1,0 +1,21 @@
+# Local state lockledger creates in whatever directory it is run from.
+lockledger.db
+lockledger.db-wal
+lockledger.db-shm
+lockledger-cache/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+.coverage
+htmlcov/
+.idea/
+*.swp
+.DS_Store

@@ -9,11 +9,12 @@ import zipfile
 from pathlib import Path
 
 from . import __version__
-from .difftool import NotCached, compare, format_report
+from .difftool import NotCached, compare, format_report, load_artifact
 from .fetch import FetchError, cached_file, default_cache_dir, fetch
 from .models import file_sha256
 from .parsers import FORMATS, FormatError, detect_format, parse_lockfile
 from .store import Store, default_db_path
+from .suspects import diff_install_hooks, find_typosquats_in_names
 
 USAGE_ERROR = 1
 NOT_FOUND_ERROR = 2
@@ -116,6 +117,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diff.add_argument("--limit", type=int, default=20, help="files shown per added/removed list")
     diff.add_argument("--json", action="store_true", help="emit machine-readable output")
+
+    suspects = subparsers.add_parser(
+        "suspects", help="check snapshots for typosquats and install-script changes"
+    )
+    suspects.add_argument("snapshot_a", nargs="?", help="earlier snapshot id")
+    suspects.add_argument("snapshot_b", nargs="?", help="later snapshot id")
+    suspects.add_argument("--snapshot", type=int, help="check a single snapshot for typosquats")
+    suspects.add_argument(
+        "--ecosystem", choices=ECOSYSTEMS, help="required when the package is not in the store"
+    )
+    suspects.add_argument("--json", action="store_true", help="emit machine-readable output")
 
     return parser
 
@@ -446,11 +458,118 @@ def command_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_suspects(args: argparse.Namespace) -> int:
+    # Option 1: check a single snapshot for typosquats
+    if args.snapshot is not None:
+        with Store(resolve_db_path(args.db)) as store:
+            snapshot = store.snapshot_by_id(args.snapshot)
+            if not snapshot:
+                raise CommandError(f"snapshot #{args.snapshot} not found")
+            # Get all package names from this snapshot
+            rows = store.connection.execute(
+                "SELECT DISTINCT name FROM packages WHERE snapshot_id = ?",
+                (args.snapshot,),
+            ).fetchall()
+            names = [row[0] for row in rows]
+        typos = find_typosquats_in_names(names)
+        if args.json:
+            print(json.dumps({"snapshot": args.snapshot, "typosquats": typos}, indent=2))
+            return 0
+        if not typos:
+            print(f"snapshot #{args.snapshot}: no typosquat suspects found")
+            return 0
+        print(f"snapshot #{args.snapshot}: typosquat suspects")
+        for t in typos:
+            print(f"  ! {t['name']} ~ {t['suspected_target']} (edit distance {t['distance']})")
+        return 0
+
+    # Option 2: compare two snapshots - check typosquats in new packages and install script changes
+    if not args.snapshot_a or not args.snapshot_b:
+        raise CommandError("suspects requires either --snapshot ID or SNAPSHOT_A SNAPSHOT_B")
+    try:
+        snap_a = int(args.snapshot_a)
+        snap_b = int(args.snapshot_b)
+    except ValueError:
+        raise CommandError("snapshot ids must be integers")
+    if snap_a > snap_b:
+        snap_a, snap_b = snap_b, snap_a  # compare in order
+
+    cache_dir = resolve_cache_dir(args.cache_dir)
+    results = {"snapshot_a": snap_a, "snapshot_b": snap_b, "typosquats": [], "install_script_changes": []}
+
+    with Store(resolve_db_path(args.db)) as store:
+        s_a = store.snapshot_by_id(snap_a)
+        s_b = store.snapshot_by_id(snap_b)
+        if not s_a or not s_b:
+            raise CommandError("one or both snapshots not found")
+        # Get packages in each snapshot
+        rows_a = store.connection.execute(
+            "SELECT name, version, ecosystem FROM packages WHERE snapshot_id = ?", (snap_a,)
+        ).fetchall()
+        rows_b = store.connection.execute(
+            "SELECT name, version, ecosystem FROM packages WHERE snapshot_id = ?", (snap_b,)
+        ).fetchall()
+        pkgs_a = {(r[0].lower(), r[1]): (r[0], r[1], r[2]) for r in rows_a}
+        pkgs_b = {(r[0].lower(), r[1]): (r[0], r[1], r[2]) for r in rows_b}
+        # New packages (in b but not in a)
+        new_pkgs = []
+        for key, (name, ver, eco) in pkgs_b.items():
+            if key not in pkgs_a:
+                new_pkgs.append(name)
+        typos = find_typosquats_in_names(new_pkgs)
+        results["typosquats"] = typos
+        # Hook comparison must key by name, not (name, version): a version bump
+        # changes the key, so an intersection of (name, version) pairs never
+        # contains the package we actually want to diff.
+        by_name_a = {r[0].lower(): (r[0], r[1], r[2]) for r in rows_a}
+        by_name_b = {r[0].lower(): (r[0], r[1], r[2]) for r in rows_b}
+        for lname in set(by_name_a) & set(by_name_b):
+            name_a, ver_a, eco_a = by_name_a[lname]
+            name_b, ver_b, eco_b = by_name_b[lname]
+            if ver_a == ver_b:
+                continue
+            name_resolved = name_b.lower() if not name_b.startswith("@") else name_b
+            ecosystem = eco_b or eco_a
+            path_a = cached_file(cache_dir, ecosystem, name_resolved, ver_a)
+            path_b = cached_file(cache_dir, ecosystem, name_resolved, ver_b)
+            if path_a and path_b and ecosystem == "npm":
+                try:
+                    art_a = load_artifact(path_a, ecosystem)
+                    art_b = load_artifact(path_b, ecosystem)
+                    hook_diff = diff_install_hooks(art_a, art_b)
+                    if hook_diff["has_changes"]:
+                        results["install_script_changes"].append({
+                            "package": name_b,
+                            "version_a": ver_a,
+                            "version_b": ver_b,
+                            "ecosystem": ecosystem,
+                            **hook_diff,
+                        })
+                except Exception:
+                    pass  # skip if can't load
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+        return 0
+    if not results["typosquats"] and not results["install_script_changes"]:
+        print(f"snapshots #{snap_a} -> #{snap_b}: no suspects found")
+        return 0
+    print(f"snapshots #{snap_a} -> #{snap_b}: suspects")
+    for t in results["typosquats"]:
+        print(f"  ! typosquat: {t['name']} ~ {t['suspected_target']} (edit distance {t['distance']})")
+    for isc in results["install_script_changes"]:
+        print(f"  ! install scripts ({isc['package']} {isc['version_a']} -> {isc['version_b']}):")
+        for flag in isc["flags"]:
+            print(f"    {flag}")
+    return 0
+
+
 HANDLERS = {
     "add": command_add,
     "when": command_when,
     "cache": command_cache,
     "diff": command_diff,
+    "suspects": command_suspects,
 }
 
 

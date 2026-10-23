@@ -197,6 +197,7 @@ parseable. The shapes are small and stable:
   changed, *_count}, "install_scripts" | "build_files" + "entry_points",
   "flags"}`; a missing artifact prints
   `{"error": "not_cached", "artifact", "cache_command"}` on stdout and exits 2
+- `suspects` → `{"snapshot"/"snapshot_a","snapshot_b", ...}` (typosquats and install-script changes when comparing snapshots; fully offline)
 
 `flags` is the list worth alerting on: one entry per newly appearing or changed
 install hook.
@@ -215,10 +216,9 @@ Honest list of what `lockledger` does not do:
 
 - **No advisory matching.** It will not tell you that a version is malicious.
   You look that up in the advisory, then ask `when` and `diff`.
-- **No typosquat or suspicious-name heuristics.** New dependencies are
-  reported as history, not judged.
 - **No behavioural analysis.** `diff` compares file lists and install hooks;
   it does not read the code in between, sandbox it, or deobfuscate it.
+- **Heuristics are limited.** `suspects` runs offline typosquat checks against a bundled list of popular names and can flag new/changed install hooks when comparing cached artifacts; it may miss many lookalikes and cannot guarantee detection of malicious packages.
 - **Snapshots are per lockfile.** Adding a second lockfile for a different part
   of the tree makes packages that only live in the first one look absent from
   the second, so `when` reads best when each snapshot is the same lockfile over

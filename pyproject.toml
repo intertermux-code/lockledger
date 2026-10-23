@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lockledger"
-version = "0.1.0"
+version = "0.2.0"
 description = "Offline lockfile supply-chain time machine: snapshot, query, and diff dependency history"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Security",
   "Topic :: Software Development :: Build Tools",
 ]
@@ -33,6 +34,7 @@ lockledger = "lockledger.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/intertermux-code/lockledger"
+Repository = "https://github.com/intertermux-code/lockledger"
 Issues = "https://github.com/intertermux-code/lockledger/issues"
 
 [tool.setuptools.packages.find]

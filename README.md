@@ -1,5 +1,8 @@
 # lockledger
 
+[![PyPI version](https://img.shields.io/pypi/v/lockledger.svg)](https://pypi.org/project/lockledger/)
+[![CI](https://github.com/intertermux-code/lockledger/actions/workflows/test.yml/badge.svg)](https://github.com/intertermux-code/lockledger/actions/workflows/test.yml)
+
 An offline lockfile supply-chain time machine.
 
 When an incident hits — the npm Shai-Hulud worms, the TanStack compromise, any
@@ -20,17 +23,21 @@ Stdlib Python only. No dependencies, no account, no vendor cloud.
 
 ## Install
 
-From a checkout:
+```sh
+pip install lockledger      # or: pipx install lockledger
+lockledger --help
+```
+
+Requires Python 3.10 or newer; there are no runtime dependencies.
+
+From a checkout instead:
 
 ```sh
 python -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/lockledger --help
 ```
 
-Or install it anywhere with `pipx install lockledger` / `pip install lockledger`
-once the package is published to PyPI. Requires Python 3.10 or newer; there are
-no runtime dependencies. Tests additionally need pytest:
-`pip install -e ".[dev]"`.
+Tests additionally need pytest: `pip install -e ".[dev]"`.
 
 ## Where things live
 
@@ -246,6 +253,38 @@ pytest -q
 
 The suite runs fully offline: `urlopen` is refused for every test, and the
 download paths are exercised against an in-memory registry double.
+
+## Releasing
+
+Publishing runs from GitHub Actions with PyPI trusted publishing (OIDC) —
+there is no API token to store, rotate, or leak. Before the first release,
+a maintainer does these one-time steps by hand:
+
+1. The `lockledger` name does not need to exist on PyPI first: add a
+   *pending* publisher at <https://pypi.org/manage/account/publishing/> and
+   the first trusted publish creates the project under your account.
+2. Register the publisher (pending, if the project is not on PyPI yet;
+   otherwise under the project's **Publishing** settings) with these exact
+   values:
+   - Publisher: GitHub
+   - Owner: `intertermux-code`
+   - Repository name: `lockledger`
+   - Workflow name: `publish.yml`
+   - Environment name: `pypi`
+3. In this repository's GitHub settings, create an environment named `pypi`
+   (no secrets needed — the job only asks for it so the PyPI side can scope
+   the publisher to it).
+
+Then every release is one tag, provided the tag matches `pyproject.toml` and
+`src/lockledger/__init__.py` (the version-sync test keeps those two equal):
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/publish.yml` refuses to run if the tag version differs
+from the pyproject version, builds the sdist and wheel, runs `twine check`
+over both, and publishes via the `pypi` environment.
 
 ## License
 

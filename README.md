@@ -141,7 +141,7 @@ the exact command that fetches it:
 
 ```sh
 $ lockledger diff safe 1.0.0 1.0.1 --ecosystem npm
-safe@1.0.1 is not in the local cache: run `lockledger cache safe@1.0.1 --ecosystem npm`
+safe@1.0.0 is not in the local cache: run `lockledger cache safe@1.0.0 --ecosystem npm`
 ```
 
 That separation is deliberate: fetching is the only step with network access,

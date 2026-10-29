@@ -65,6 +65,37 @@ def test_investigate_a_compromised_version(tmp_path, db, locks, cache_dir, capsy
     assert stored == len(baseline) + len(incident) + len(remediation)
 
 
+def test_nested_dependency_is_queried_by_its_own_name(tmp_path, db, locks, capsys):
+    """`when semver` is the question people come for, even for a hoisted-under-scope copy."""
+    lock = locks / "package-lock-1.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "root"},
+                    "node_modules/@babel/highlight": {"version": "7.0.0"},
+                    "node_modules/@babel/highlight/node_modules/semver": {
+                        "version": "5.7.0",
+                        "resolved": "https://registry.npmjs.org/semver/-/semver-5.7.0.tgz",
+                    },
+                },
+            }
+        )
+    )
+
+    assert run_cli("--db", str(db), "add", str(lock)) == 0
+    assert "2 packages" in capsys.readouterr().out
+
+    assert run_cli("--db", str(db), "when", "semver") == 0
+    assert "5.7.0 entered the tree" in capsys.readouterr().out
+
+    assert run_cli("--db", str(db), "when", "@babel/highlight") == 0
+    parent = capsys.readouterr().out
+    assert "7.0.0 entered the tree" in parent
+    assert "5.7.0" not in parent
+
+
 def test_diff_between_two_versions_of_the_same_package(tmp_path, db, locks, cache_dir, capsys):
     clean = npm_tarball(tmp_path / "safe-1.0.0.tgz", "safe", "1.0.0",
                         scripts={"build": "tsc"}, files={"index.js": "module.exports = {};\n"})

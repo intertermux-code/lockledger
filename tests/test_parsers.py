@@ -60,6 +60,28 @@ def test_npm_v3_handles_nested_and_scoped_and_workspace_entries():
     assert scoped.integrity == "sha512-aaa"
 
 
+def test_npm_v3_dependency_nested_under_a_scoped_parent():
+    """The copy npm installs is the deepest one, so the leaf owns the version."""
+    text = json.dumps(
+        {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "root"},
+                "node_modules/@babel/highlight": {"version": "7.0.0"},
+                "node_modules/@babel/highlight/node_modules/semver": {"version": "5.7.0"},
+                "node_modules/@x/main/node_modules/@y/leaf": {"version": "1.2.3"},
+                "node_modules/debug/node_modules/ms": {"version": "2.0.0"},
+            },
+        }
+    )
+    assert as_records(parse_npm_lock(text)) == [
+        ("@babel/highlight", "7.0.0"),
+        ("@y/leaf", "1.2.3"),
+        ("ms", "2.0.0"),
+        ("semver", "5.7.0"),
+    ]
+
+
 def test_npm_v2_packages_and_legacy_dependencies_coexist():
     text = json.dumps(
         {

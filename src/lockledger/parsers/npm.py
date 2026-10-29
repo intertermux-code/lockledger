@@ -9,11 +9,11 @@ def _split_key(key: str) -> str:
     """Turn a `packages` map key into the package name it installs."""
     if not key or not key.startswith("node_modules/"):
         return ""
-    tail = key[len("node_modules/"):]
-    if tail.startswith("@"):
-        head, _, rest = tail.partition("/")
-        return f"{head}/{rest.split('/node_modules/')[0]}" if rest else head
-    return tail.rsplit("/node_modules/", 1)[-1]
+    parts = key.split("/")
+    segments = [index for index, part in enumerate(parts) if part == "node_modules"]
+    # npm installs the deepest copy, so the leaf is whatever follows the last
+    # node_modules segment; joining keeps a scoped leaf's "@scope" attached.
+    return "/".join(parts[segments[-1] + 1:])
 
 
 def parse_npm_lock(text: str) -> list[PackageRecord]:

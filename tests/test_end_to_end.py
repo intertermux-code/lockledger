@@ -96,6 +96,43 @@ def test_nested_dependency_is_queried_by_its_own_name(tmp_path, db, locks, capsy
     assert "5.7.0" not in parent
 
 
+def test_workspace_nested_dependency_is_queried_by_its_own_name(tmp_path, db, locks, capsys):
+    """A package pinned inside a workspace is still a package people ask about."""
+    lock = locks / "package-lock-1.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "root"},
+                    "packages/app": {"link": True, "resolved": "file:packages/app", "name": "app"},
+                    "node_modules/react": {
+                        "version": "18.2.0",
+                        "resolved": "https://registry.npmjs.org/react/-/react-18.2.0.tgz",
+                    },
+                    "packages/app/node_modules/react": {
+                        "version": "17.0.2",
+                        "resolved": "https://registry.npmjs.org/react/-/react-17.0.2.tgz",
+                    },
+                    "packages/app/node_modules/lodash": {
+                        "version": "4.17.21",
+                        "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
+                    },
+                },
+            }
+        )
+    )
+
+    assert run_cli("--db", str(db), "add", str(lock)) == 0
+    assert "3 packages" in capsys.readouterr().out
+
+    assert run_cli("--db", str(db), "when", "lodash") == 0
+    assert "4.17.21 entered the tree" in capsys.readouterr().out
+
+    assert run_cli("--db", str(db), "when", "react") == 0
+    assert "17.0.2, 18.2.0 entered the tree" in capsys.readouterr().out
+
+
 def test_diff_between_two_versions_of_the_same_package(tmp_path, db, locks, cache_dir, capsys):
     clean = npm_tarball(tmp_path / "safe-1.0.0.tgz", "safe", "1.0.0",
                         scripts={"build": "tsc"}, files={"index.js": "module.exports = {};\n"})

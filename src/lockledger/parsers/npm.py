@@ -7,12 +7,16 @@ from ..models import PackageRecord
 
 def _split_key(key: str) -> str:
     """Turn a `packages` map key into the package name it installs."""
-    if not key or not key.startswith("node_modules/"):
+    if not key:
         return ""
     parts = key.split("/")
     segments = [index for index, part in enumerate(parts) if part == "node_modules"]
+    if not segments:
+        return ""  # the root entry and bare workspace folders install nothing
     # npm installs the deepest copy, so the leaf is whatever follows the last
     # node_modules segment; joining keeps a scoped leaf's "@scope" attached.
+    # A workspace nests its own node_modules deeper still, so an installed
+    # package is not necessarily the first segment of the key.
     return "/".join(parts[segments[-1] + 1:])
 
 

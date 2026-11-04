@@ -82,6 +82,38 @@ def test_npm_v3_dependency_nested_under_a_scoped_parent():
     ]
 
 
+def test_npm_v3_dependency_nested_under_a_workspace():
+    """A workspace keeps its own node_modules; those copies are published artifacts."""
+    text = json.dumps(
+        {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "root"},
+                "packages/app": {"link": True, "resolved": "file:packages/app", "name": "app"},
+                "node_modules/react": {"version": "18.2.0"},
+                "packages/app/node_modules/react": {
+                    "version": "17.0.2",
+                    "resolved": "https://registry.npmjs.org/react/-/react-17.0.2.tgz",
+                    "integrity": "sha512-nested",
+                },
+                "packages/app/node_modules/@vue/shared": {"version": "3.4.0"},
+                "packages/app/node_modules/shared-ui": {
+                    "link": True,
+                    "resolved": "file:packages/shared-ui",
+                },
+            },
+        }
+    )
+    records = parse_npm_lock(text)
+    assert as_records(records) == [
+        ("@vue/shared", "3.4.0"),
+        ("react", "17.0.2"),
+        ("react", "18.2.0"),
+    ]
+    nested = next(record for record in records if record.version == "17.0.2")
+    assert nested.integrity == "sha512-nested"
+
+
 def test_npm_v2_packages_and_legacy_dependencies_coexist():
     text = json.dumps(
         {

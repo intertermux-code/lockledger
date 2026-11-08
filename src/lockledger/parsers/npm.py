@@ -40,7 +40,8 @@ def parse_npm_lock(text: str) -> list[PackageRecord]:
             pkg_version = entry.get("version")
             if not name or not pkg_version:
                 continue
-            if str(entry.get("link", "")).startswith("file:"):
+            link = entry.get("link")
+            if link is True or (isinstance(link, str) and link.startswith("file:")):
                 continue  # workspace links have no published artifact
             if str(pkg_version).startswith("link:"):
                 continue

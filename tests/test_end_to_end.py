@@ -171,3 +171,44 @@ def test_console_script_runs(tmp_path, locks, db):
     )
     assert completed.returncode == 0, completed.stderr
     assert "snapshot #1 (npm)" in completed.stdout
+
+
+def test_link_true_entry_is_not_stored(tmp_path, locks, db, capsys):
+    """A workspace-nested `link: true` entry carries name+version but no artifact.
+
+    It must not reach the store, so `when` for the linked-only name finds
+    nothing and exits 2, exactly like a missing package.
+    """
+    lock = locks / "package-lock-link.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "root"},
+                    "node_modules/react": {
+                        "version": "18.2.0",
+                        "resolved": "https://registry.npmjs.org/react/-/react-18.2.0.tgz",
+                    },
+                    "packages/app/node_modules/react": {
+                        "link": True,
+                        "name": "react",
+                        "version": "19.0.0",
+                    },
+                },
+            }
+        )
+    )
+
+    assert run_cli("--db", str(db), "add", str(lock)) == 0
+    assert "1 packages" in capsys.readouterr().out
+
+    # the real 18.2.0 copy is the only react version in the store
+    assert run_cli("--db", str(db), "when", "react") == 0
+    out = capsys.readouterr().out
+    assert "18.2.0 entered the tree" in out
+    assert "19.0.0" not in out
+
+    # a name that exists ONLY as a link entry behaves like a missing package
+    assert run_cli("--db", str(db), "when", "react", "19.0.0") == 2
+    assert "never appears in the store" in capsys.readouterr().err

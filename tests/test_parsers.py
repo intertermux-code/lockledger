@@ -298,3 +298,28 @@ def test_lockfile_without_pinned_packages_is_an_error(tmp_path):
     path.write_text("flask>=2.0\nrich\n")
     with pytest.raises(FormatError, match="no pinned packages"):
         parse_lockfile(path)
+
+
+def test_npm_link_true_entries_are_skipped_everywhere():
+    text = json.dumps(
+        {
+            "lockfileVersion": 3,
+            "packages": {
+                "": {"name": "root"},
+                "packages/app": {"link": True, "name": "app", "version": "1.0.0"},
+                "node_modules/@scope/pkg": {
+                    "link": True,
+                    "name": "@scope/pkg",
+                    "version": "2.0.0",
+                },
+                "packages/app/node_modules/react": {
+                    "link": True,
+                    "name": "react",
+                    "version": "19.0.0",
+                },
+                "node_modules/react": {"version": "18.2.0"},
+            },
+        }
+    )
+    records = parse_npm_lock(text)
+    assert as_records(records) == [("react", "18.2.0")]

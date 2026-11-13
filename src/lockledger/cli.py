@@ -125,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     suspects.add_argument("snapshot_b", nargs="?", help="later snapshot id")
     suspects.add_argument("--snapshot", type=int, help="check a single snapshot for typosquats")
     suspects.add_argument(
-        "--ecosystem", choices=ECOSYSTEMS, help="required when the package is not in the store"
+        "--ecosystem", choices=ECOSYSTEMS, help="only report suspects from this ecosystem"
     )
     suspects.add_argument("--json", action="store_true", help="emit machine-readable output")
 
@@ -459,17 +459,21 @@ def command_diff(args: argparse.Namespace) -> int:
 
 
 def command_suspects(args: argparse.Namespace) -> int:
+    ecosystem_filter = args.ecosystem
+
     # Option 1: check a single snapshot for typosquats
     if args.snapshot is not None:
         with Store(resolve_db_path(args.db)) as store:
             snapshot = store.snapshot_by_id(args.snapshot)
             if not snapshot:
                 raise CommandError(f"snapshot #{args.snapshot} not found")
-            # Get all package names from this snapshot
-            rows = store.connection.execute(
-                "SELECT DISTINCT name FROM packages WHERE snapshot_id = ?",
-                (args.snapshot,),
-            ).fetchall()
+            # Get package names from this snapshot, optionally filtered by ecosystem
+            query = "SELECT DISTINCT name FROM packages WHERE snapshot_id = ?"
+            params = [args.snapshot]
+            if ecosystem_filter:
+                query += " AND ecosystem = ?"
+                params.append(ecosystem_filter)
+            rows = store.connection.execute(query, params).fetchall()
             names = [row[0] for row in rows]
         typos = find_typosquats_in_names(names)
         if args.json:
@@ -502,13 +506,16 @@ def command_suspects(args: argparse.Namespace) -> int:
         s_b = store.snapshot_by_id(snap_b)
         if not s_a or not s_b:
             raise CommandError("one or both snapshots not found")
-        # Get packages in each snapshot
-        rows_a = store.connection.execute(
-            "SELECT name, version, ecosystem FROM packages WHERE snapshot_id = ?", (snap_a,)
-        ).fetchall()
-        rows_b = store.connection.execute(
-            "SELECT name, version, ecosystem FROM packages WHERE snapshot_id = ?", (snap_b,)
-        ).fetchall()
+        # Get packages in each snapshot, optionally filtered by ecosystem
+        query = "SELECT name, version, ecosystem FROM packages WHERE snapshot_id = ?"
+        params_a = [snap_a]
+        params_b = [snap_b]
+        if ecosystem_filter:
+            query += " AND ecosystem = ?"
+            params_a.append(ecosystem_filter)
+            params_b.append(ecosystem_filter)
+        rows_a = store.connection.execute(query, params_a).fetchall()
+        rows_b = store.connection.execute(query, params_b).fetchall()
         pkgs_a = {(r[0].lower(), r[1]): (r[0], r[1], r[2]) for r in rows_a}
         pkgs_b = {(r[0].lower(), r[1]): (r[0], r[1], r[2]) for r in rows_b}
         # New packages (in b but not in a)

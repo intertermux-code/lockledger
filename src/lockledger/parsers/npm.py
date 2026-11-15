@@ -20,6 +20,16 @@ def _split_key(key: str) -> str:
     return "/".join(parts[segments[-1] + 1:])
 
 
+def _string_field(entry: dict, field: str) -> str:
+    """Return an optional string field, refusing non-string values."""
+    value = entry.get(field)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"package entry field '{field}' must be a string")
+    return value
+
+
 def parse_npm_lock(text: str) -> list[PackageRecord]:
     """Every pinned package in a package-lock.json, v1 through v3."""
     try:
@@ -45,16 +55,17 @@ def parse_npm_lock(text: str) -> list[PackageRecord]:
                 continue  # workspace links have no published artifact
             if str(pkg_version).startswith("link:"):
                 continue
-            resolved = entry.get("resolved") or ""
+            resolved = _string_field(entry, "resolved")
             if resolved.startswith("file:"):
                 continue
+            integrity = _string_field(entry, "integrity")
             records.append(
                 PackageRecord(
                     name=name,
                     version=str(pkg_version),
                     ecosystem="npm",
                     resolved_url=resolved,
-                    integrity=entry.get("integrity") or "",
+                    integrity=integrity,
                 )
             )
 
@@ -72,12 +83,15 @@ def parse_npm_lock(text: str) -> list[PackageRecord]:
 
 def _legacy_dependencies(dependencies: dict) -> list[PackageRecord]:
     """Flatten the v1 nested `dependencies` tree."""
+    if not isinstance(dependencies, dict):
+        raise ValueError("dependencies must be an object")
     found: list[PackageRecord] = []
     for name, entry in dependencies.items():
         if not isinstance(entry, dict):
             continue
         pkg_version = entry.get("version")
-        resolved = entry.get("resolved") or ""
+        resolved = _string_field(entry, "resolved")
+        integrity = _string_field(entry, "integrity")
         if pkg_version and not str(pkg_version).startswith("git+") and resolved:
             found.append(
                 PackageRecord(
@@ -85,8 +99,11 @@ def _legacy_dependencies(dependencies: dict) -> list[PackageRecord]:
                     version=str(pkg_version),
                     ecosystem="npm",
                     resolved_url=resolved,
-                    integrity=entry.get("integrity") or "",
+                    integrity=integrity,
                 )
             )
-        found.extend(_legacy_dependencies(entry.get("dependencies") or {}))
+        nested = entry.get("dependencies")
+        if nested is None:
+            nested = {}
+        found.extend(_legacy_dependencies(nested))
     return found

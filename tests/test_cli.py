@@ -114,6 +114,55 @@ def test_environment_variables_override_the_defaults(tmp_path, monkeypatch):
     assert resolve_db_path(str(tmp_path / "flag.db")) == tmp_path / "flag.db"
 
 
+def test_add_rejects_malformed_npm_shapes_cleanly(tmp_path, capsys):
+    cases = [
+        (
+            "resolved-number.json",
+            {"lockfileVersion": 3, "packages": {"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": 1}}},
+        ),
+        (
+            "resolved-dict.json",
+            {"lockfileVersion": 3, "packages": {"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": {"url": "x"}}}},
+        ),
+        (
+            "resolved-list.json",
+            {"lockfileVersion": 3, "packages": {"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": ["x"]}}},
+        ),
+        (
+            "resolved-bool.json",
+            {"lockfileVersion": 3, "packages": {"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": True}}},
+        ),
+        (
+            "integrity-object.json",
+            {"lockfileVersion": 3, "packages": {"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": "https://r/x.tgz", "integrity": {}}}},
+        ),
+        (
+            "legacy-integrity-object.json",
+            {"lockfileVersion": 1, "dependencies": {"x": {"version": "1.0.0", "resolved": "https://r/x.tgz", "integrity": {"alg": "sha512"}}}},
+        ),
+        (
+            "legacy-deps-string.json",
+            {"lockfileVersion": 1, "dependencies": {"x": {"version": "1.0.0", "resolved": "https://r/x.tgz", "dependencies": "broken"}}},
+        ),
+    ]
+    for name, payload in cases:
+        db = tmp_path / f"{name}.db"
+        path = tmp_path / name
+        path.write_text(json.dumps(payload))
+        assert run_cli("--db", str(db), "add", str(path)) == 1
+        err = capsys.readouterr().err
+        assert "error:" in err
+        assert "Traceback" not in err
+        assert not db.exists() or run_cli("--db", str(db), "diff", "1", "1") == 1
+        # no snapshot recorded
+        if db.exists():
+            conn = __import__("sqlite3").connect(db)
+            count = conn.execute("select count(*) from snapshots").fetchone()[0]
+            conn.close()
+            assert count == 0, name
+        (tmp_path / f"{name}.db").unlink(missing_ok=True)
+
+
 def test_add_creates_the_store_on_demand(tmp_path, locks, capsys):
     database = tmp_path / "deep" / "nested" / "lockledger.db"
     lock = write_npm_lock(locks, 1, RECORDS)

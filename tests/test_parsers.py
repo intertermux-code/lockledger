@@ -323,3 +323,88 @@ def test_npm_link_true_entries_are_skipped_everywhere():
     )
     records = parse_npm_lock(text)
     assert as_records(records) == [("react", "18.2.0")]
+
+
+def _npm_lock(packages=None, dependencies=None):
+    data = {"lockfileVersion": 3}
+    if packages is not None:
+        data["packages"] = packages
+    if dependencies is not None:
+        data["dependencies"] = dependencies
+    return json.dumps(data)
+
+
+def test_npm_rejects_non_string_resolved_in_packages():
+    for resolved in (1, [1], {"url": "https://x.tgz"}, True):
+        text = _npm_lock(
+            packages={"": {"name": "a"}, "node_modules/x": {"version": "1.0.0", "resolved": resolved}}
+        )
+        with pytest.raises(ValueError, match="package entry field 'resolved' must be a string"):
+            parse_npm_lock(text)
+
+
+def test_npm_rejects_non_string_integrity_in_packages():
+    text = _npm_lock(
+        packages={
+            "": {"name": "a"},
+            "node_modules/x": {"version": "1.0.0", "resolved": "https://r/x-1.0.0.tgz", "integrity": {}},
+        }
+    )
+    with pytest.raises(ValueError, match="package entry field 'integrity' must be a string"):
+        parse_npm_lock(text)
+
+
+def test_npm_rejects_non_string_integrity_in_legacy_dependencies():
+    text = json.dumps(
+        {
+            "lockfileVersion": 1,
+            "dependencies": {
+                "x": {
+                    "version": "1.0.0",
+                    "resolved": "https://r/x-1.0.0.tgz",
+                    "integrity": {"alg": "sha512"},
+                }
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="package entry field 'integrity' must be a string"):
+        parse_npm_lock(text)
+
+
+def test_npm_rejects_non_object_legacy_dependencies():
+    text = json.dumps(
+        {
+            "lockfileVersion": 1,
+            "dependencies": {
+                "x": {
+                    "version": "1.0.0",
+                    "resolved": "https://r/x-1.0.0.tgz",
+                    "dependencies": "broken",
+                }
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="dependencies must be an object"):
+        parse_npm_lock(text)
+
+
+def test_npm_malformed_shapes_already_handled_cleanly():
+    # packages entry as a string and version as bool are skipped or kept as-is;
+    # none of these tracebacks and they must not become regressions.
+    records = parse_npm_lock(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": "root"},
+                    "node_modules/a": "broken",
+                    "node_modules/b": {"version": True, "resolved": "https://r/b.tgz"},
+                    "node_modules/c": {"version": False, "resolved": "https://r/c.tgz"},
+                },
+            }
+        )
+    )
+    assert as_records(records) == [("b", "True")]
+    # top-level dependencies as list/string is ignored by the parser
+    assert parse_npm_lock(json.dumps({"lockfileVersion": 1, "dependencies": []})) == []
+    assert parse_npm_lock(json.dumps({"lockfileVersion": 1, "dependencies": "bad"})) == []

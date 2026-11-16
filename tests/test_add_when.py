@@ -268,3 +268,74 @@ def test_add_accepts_format_override_for_unusual_filenames(tmp_path, db, capsys)
     odd.write_text("requests==2.31.0\n")
     assert run_cli("--db", str(db), "add", str(odd), "--format", "pip") == 0
     assert "snapshot #1 (pip)" in capsys.readouterr().out
+
+
+def test_add_dedupes_relative_vs_absolute_path(tmp_path, db, capsys, monkeypatch):
+    """Same lockfile added via relative and absolute path yields one snapshot."""
+    lock = write_npm_lock(tmp_path, 1, RECORDS)
+    rel = lock.name  # "package-lock-1.json"
+    abs_path = str(lock.resolve())
+
+    monkeypatch.chdir(tmp_path)
+    assert add(db, rel, "first") == 0
+    capsys.readouterr()
+    assert add(db, abs_path, "second") == 0
+    out = capsys.readouterr().out
+    assert "already snapshotted as #1" in out
+    assert "unchanged" in out
+
+    store = sqlite3.connect(db)
+    assert store.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1
+
+
+def test_add_dedupes_dot_prefix_spelling(tmp_path, db, capsys, monkeypatch):
+    """Adding ./lockfile and lockfile yields one snapshot."""
+    lock = write_npm_lock(tmp_path, 1, RECORDS)
+    plain = lock.name
+    dot_prefix = f"./{lock.name}"
+
+    monkeypatch.chdir(tmp_path)
+    assert add(db, plain, "first") == 0
+    capsys.readouterr()
+    assert add(db, dot_prefix, "second") == 0
+    assert "already snapshotted as #1" in capsys.readouterr().out
+
+    store = sqlite3.connect(db)
+    assert store.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1
+
+
+def test_add_dedupes_dotdot_spelling(tmp_path, db, capsys, monkeypatch):
+    """Adding ../dir/lockfile and dir/lockfile yields one snapshot."""
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    lock = write_npm_lock(subdir, 1, RECORDS)
+    direct = str(lock.relative_to(tmp_path))
+    dotdot = f"../{direct}"
+
+    monkeypatch.chdir(tmp_path)
+    assert add(db, direct, "first") == 0
+    capsys.readouterr()
+    monkeypatch.chdir(subdir)
+    assert add(db, dotdot, "second") == 0
+    assert "already snapshotted as #1" in capsys.readouterr().out
+
+    store = sqlite3.connect(db)
+    assert store.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1
+
+
+def test_add_dedupes_symlinked_path(tmp_path, db, capsys):
+    """Adding a lockfile via a symlink yields one snapshot."""
+    lock = write_npm_lock(tmp_path, 1, RECORDS)
+    link = tmp_path / "link-lock.json"
+    try:
+        link.symlink_to(lock)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+
+    assert add(db, str(lock), "first") == 0
+    capsys.readouterr()
+    assert add(db, str(link), "second") == 0
+    assert "already snapshotted as #1" in capsys.readouterr().out
+
+    store = sqlite3.connect(db)
+    assert store.execute("SELECT count(*) FROM snapshots").fetchone()[0] == 1

@@ -150,7 +150,7 @@ def command_add(args: argparse.Namespace) -> int:
                 print(f"note: {path}: {note}", file=sys.stderr)
 
             digest = file_sha256(path)
-            source = str(path)
+            source = str(path.resolve())
             existing = store.find_snapshot(digest, source)
             if existing:
                 entries.append(

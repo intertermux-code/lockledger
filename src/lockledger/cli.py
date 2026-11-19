@@ -499,7 +499,7 @@ def command_suspects(args: argparse.Namespace) -> int:
         snap_a, snap_b = snap_b, snap_a  # compare in order
 
     cache_dir = resolve_cache_dir(args.cache_dir)
-    results = {"snapshot_a": snap_a, "snapshot_b": snap_b, "typosquats": [], "install_script_changes": []}
+    results = {"snapshot_a": snap_a, "snapshot_b": snap_b, "typosquats": [], "install_script_changes": [], "load_errors": []}
 
     with Store(resolve_db_path(args.db)) as store:
         s_a = store.snapshot_by_id(snap_a)
@@ -552,9 +552,16 @@ def command_suspects(args: argparse.Namespace) -> int:
                             "ecosystem": ecosystem,
                             **hook_diff,
                         })
-                except Exception:
-                    pass  # skip if can't load
+                except Exception as error:
+                    results["load_errors"].append({
+                        "package": name_b,
+                        "version_a": ver_a,
+                        "version_b": ver_b,
+                        "error": str(error),
+                    })
 
+    if results["load_errors"]:
+        print(f"lockledger: could not load {len(results['load_errors'])} cached artifact(s); install-script comparison may be incomplete", file=sys.stderr)
     if args.json:
         print(json.dumps(results, indent=2))
         return 0

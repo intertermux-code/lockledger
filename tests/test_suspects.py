@@ -206,3 +206,42 @@ def test_suspects_ecosystem_filter_two_snapshots(tmp_path, locks, db, capsys):
     assert code == 0
     result = json.loads(capsys.readouterr().out)
     assert any(t["name"].lower() == "requestz" for t in result["typosquats"])
+
+
+def test_suspects_corrupt_artifact_reported_not_silent(tmp_path, db, cache_dir, capsys):
+    # A cached artifact that fails to load must be surfaced, not silently
+    # skipped, otherwise install-script changes can go unreported.
+    locks = tmp_path / "locks"
+    locks.mkdir()
+    packages1 = [("event-stream", "3.0.20")]
+    packages2 = [("event-stream", "4.0.1")]
+    add(locks, db, 0, packages1, label="pre")
+    add(locks, db, 1, packages2, label="post")
+    capsys.readouterr()
+
+    before = npm_tarball(
+        tmp_path / "artifacts" / "event-stream-3.0.20.tgz",
+        "event-stream",
+        "3.0.20",
+        scripts={"test": "echo ok"},
+    )
+    after = npm_tarball(
+        tmp_path / "artifacts" / "event-stream-4.0.1.tgz",
+        "event-stream",
+        "4.0.1",
+        scripts={"test": "echo ok", "preinstall": "node ./install.js"},
+    )
+    stage(cache_dir, before, "npm", "event-stream", "3.0.20")
+    stage(cache_dir, after, "npm", "event-stream", "4.0.1")
+
+    # Corrupt the cached "after" tarball so it cannot be loaded.
+    cached_after = cache_dir / "npm" / "event-stream" / "4.0.1" / after.name
+    cached_after.write_bytes(b"not a tarball at all")
+
+    code = run_cli("--db", str(db), "--cache-dir", str(cache_dir), "suspects", "1", "2", "--json")
+    assert code == 0
+    out, err = capsys.readouterr()
+    result = json.loads(out)
+    assert result["load_errors"]
+    assert any(e["package"] == "event-stream" for e in result["load_errors"])
+    assert "could not load" in err
